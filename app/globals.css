@@ -1,6 +1,11 @@
 @import "tailwindcss";
 
+.cap {
+  inset: 45px 0px 0px 75px;
+}
+
 body {
   @apply bg-[#FDFBF7] text-[#4A4A4A] antialiased;
     font-family: "Nunito", sans-serif; 
 }
+

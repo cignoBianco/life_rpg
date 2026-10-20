@@ -2,7 +2,14 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { initialQuests } from '@/lib/data';
 import { achievements } from '@/lib/achievements';
-import type { GameData } from '@/lib/types';
+import type { GameData, ActivityEntry } from '@/lib/types';
+
+const getTodayString = () => new Date().toISOString().split('T')[0];
+const getYesterdayString = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+};
 
 const defaultState: GameData = {
     quests: initialQuests,
@@ -15,6 +22,7 @@ const defaultState: GameData = {
     inventory: ['av1'],
     equippedGear: [],
     lastReset: '',
+    lastQuestDate: '',
     streak: 0,
     totalQuestsDone: 0,
     unlockedAchievements: [],
@@ -24,6 +32,7 @@ const defaultState: GameData = {
     hasEarlyBird: false,
     hasNightOwl: false,
     hasLongQuest: false,
+    activityLog: [],
 };
 
 type CompleteResult = {
@@ -61,10 +70,7 @@ const checkAchievements = (state: GameData): { state: GameData; unlocked: string
         }
     });
 
-    return {
-        state: { ...state, unlockedAchievements: unlocked, stars, gems },
-        unlocked: newlyUnlocked,
-    };
+    return { state: { ...state, unlockedAchievements: unlocked, stars, gems }, unlocked: newlyUnlocked };
 };
 
 export function GameProvider({ children }: { children: ReactNode }) {
@@ -74,18 +80,31 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         const timeoutId = setTimeout(() => {
-            const today = new Date().toISOString().split('T')[0];
+            const today = getTodayString();
             const saved = localStorage.getItem('liferpg-state');
             if (saved) {
                 try {
-                    const parsed = JSON.parse(saved) as Partial<GameData> & { lastReset?: string };
+                    const parsed = JSON.parse(saved) as Partial<GameData>;
+                    const hasValidQuests =
+                        Array.isArray(parsed.quests) &&
+                        parsed.quests.length > 0 &&
+                        Array.isArray(parsed.quests[0]?.variants);
+
+                    // Сброс стрика, если вчера не было активности
+                    let streak = parsed.streak ?? 0;
+                    if (parsed.lastQuestDate && parsed.lastQuestDate !== today && parsed.lastQuestDate !== getYesterdayString()) {
+                        streak = 0;
+                    }
+
                     const shouldReset = parsed.lastReset !== today;
+
                     setState({
                         ...defaultState,
                         ...parsed,
-                        quests: shouldReset
+                        quests: (!hasValidQuests || shouldReset)
                             ? initialQuests.map(q => ({ ...q, completed: false }))
-                            : (parsed.quests ?? initialQuests),
+                            : parsed.quests!,
+                        streak,
                         lastReset: today,
                     });
                 } catch {
@@ -99,33 +118,31 @@ export function GameProvider({ children }: { children: ReactNode }) {
         return () => clearTimeout(timeoutId);
     }, []);
 
-    // Сохранение
     useEffect(() => {
         if (!isMounted) return;
         localStorage.setItem('liferpg-state', JSON.stringify(state));
     }, [state, isMounted]);
 
-    // Сброс в полночь TODO cron
     useEffect(() => {
         if (!isMounted) return;
         const now = new Date();
         const midnight = new Date();
         midnight.setHours(24, 0, 0, 0);
-        const msUntilMidnight = midnight.getTime() - now.getTime();
         const timer = setTimeout(() => {
-            const today = new Date().toISOString().split('T')[0];
+            const today = getTodayString();
             setState(prev => ({
                 ...prev,
                 quests: prev.quests.map(q => ({ ...q, completed: false, completedVariant: undefined })),
                 lastReset: today,
             }));
-        }, msUntilMidnight);
+            setDailyChestOpened(false);
+        }, midnight.getTime() - now.getTime());
         return () => clearTimeout(timer);
     }, [state.lastReset, isMounted]);
 
     const completeQuest = (id: string, variantIndex: number): CompleteResult | null => {
         const quest = state.quests.find(q => q.id === id);
-        if (!quest || quest.completed) return null;
+        if (!quest || quest.completed || !quest.variants) return null;
 
         const variant = quest.variants[variantIndex];
         if (!variant) return null;
@@ -134,6 +151,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const earnedXp = Math.round(variant.xp * streakBonus);
 
         const now = new Date();
+        const today = getTodayString();
         const hour = now.getHours();
 
         let newXp = state.xp + earnedXp;
@@ -153,6 +171,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
         );
         const allCompleted = newQuests.every(q => q.completed);
 
+        let newStreak = state.streak;
+        if (state.lastQuestDate === today) {
+            newStreak = state.streak;
+        } else if (state.lastQuestDate === getYesterdayString()) {
+            newStreak = state.streak + 1;
+        } else if (state.streak === 0) {
+            newStreak = 1;
+        } else {
+            newStreak = 1;
+        }
+
+        const newActivity: ActivityEntry = {
+            date: today,
+            questId: quest.id,
+            category: quest.category,
+            xp: earnedXp,
+        };
+
         let newState: GameData = {
             ...state,
             quests: newQuests,
@@ -161,12 +197,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
             stars: state.stars + variant.stars + (allCompleted ? 10 : 0),
             gems: state.gems + (allCompleted ? 1 : 0),
             totalQuestsDone: state.totalQuestsDone + 1,
-            streak: state.streak + 1,
+            streak: newStreak,
+            lastQuestDate: today,
             categoryCount,
             perfectDays: allCompleted ? state.perfectDays + 1 : state.perfectDays,
             hasEarlyBird: state.hasEarlyBird || hour < 8,
             hasNightOwl: state.hasNightOwl || hour >= 23,
             hasLongQuest: state.hasLongQuest || variant.label.includes('60'),
+            activityLog: [...state.activityLog.slice(-200), newActivity], // храним последние 200
         };
 
         const { state: withAch, unlocked } = checkAchievements(newState);

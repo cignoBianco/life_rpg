@@ -69,6 +69,7 @@ export type ShopItem = {
   price: number;
   icon: string;
   category: 'avatar' | 'gear' | 'boost';
+  className?: string;
 };
 
 export const shopItems: ShopItem[] = [
@@ -78,7 +79,7 @@ export const shopItems: ShopItem[] = [
   { id: 'av4', title: 'Wise Owl', desc: 'Знание — сила', price: 800, icon: '🦉', category: 'avatar' },
   { id: 'av5', title: 'Dragon', desc: 'Огненная мотивация', price: 1500, icon: '🐉', category: 'avatar' },
   { id: 'g1', title: 'Little Sword', desc: 'Для смелых дел', price: 400, icon: '🗡️', category: 'gear' },
-  { id: 'g2', title: 'Cozy Beanie', desc: 'Тёплые мысли', price: 350, icon: '🧢', category: 'gear' },
+  { id: 'g2', title: 'Cozy Beanie', desc: 'Тёплые мысли', price: 350, icon: '🧢', category: 'gear', className: 'cap' },
   { id: 'g3', title: 'Magic Cloak', desc: 'Скрытность +10', price: 600, icon: '🧥', category: 'gear' },
   { id: 'g4', title: 'Shield', desc: 'Защита от прокрастинации', price: 700, icon: '🛡️', category: 'gear' },
   { id: 'b1', title: 'XP Potion', desc: 'x2 XP на час', price: 250, icon: '🧪', category: 'boost' },
